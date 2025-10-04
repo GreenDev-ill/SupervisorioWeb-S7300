@@ -1,0 +1,148 @@
+// server.js
+
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const snap7 = require('node-snap7');
+
+// --- CONFIGURAÇÕES ---
+const PORT = 3000;
+const PLC_IP = '192.168.0.10'; // <-- MUDE PARA O IP DO SEU CLP
+const PLC_RACK = 0;
+const PLC_SLOT = 2; // Para S7-300/400. Para S7-1200/1500, geralmente é 0 ou 1.
+
+// --- MAPEAMENTO DE VARIÁVEIS NO CLP (Ex: DB1) ---
+const DB_NUMBER = 1;
+const VAR_CONFIG = {
+    bitTeste: { type: 'BOOL', byte: 0, bit: 0 },
+    intTeste: { type: 'INT', byte: 2 },
+    realTeste: { type: 'REAL', byte: 4 }
+};
+const DB_SIZE = 8; // Tamanho do buffer para ler (suficiente para cobrir nossas variáveis)
+
+// Inicializa o cliente Snap7
+const s7client = new snap7.S7Client();
+
+const app = express();
+const server = http.createServer(app);
+const io = new socketIo(server);
+
+// Serve os arquivos estáticos da pasta 'public'
+app.use(express.static('public'));
+
+let isPlcConnected = false;
+
+// Função para conectar ao CLP
+function connectPLC() {
+    if (isPlcConnected) {
+        console.log('Já conectado ao CLP.');
+        return;
+    }
+    s7client.ConnectTo(PLC_IP, PLC_RACK, PLC_SLOT, (err) => {
+        if (err) {
+            isPlcConnected = false;
+            console.error(`[ERRO] Conexão com CLP falhou. Código: ${err}. Tentando novamente em 5s...`);
+            setTimeout(connectPLC, 5000); // Tenta reconectar após 5 segundos
+            return;
+        }
+        isPlcConnected = true;
+        console.log(`[SUCESSO] Conectado ao CLP em ${PLC_IP}`);
+    });
+}
+
+// Inicia a primeira tentativa de conexão
+connectPLC();
+
+
+// Lógica de comunicação quando um cliente web se conecta
+io.on('connection', (socket) => {
+    console.log('Novo cliente web conectado:', socket.id);
+
+    // --- EVENTOS RECEBIDOS DO FRONTEND PARA ESCREVER NO CLP ---
+
+    // Escrever o Bit de Teste (BOOL)
+    socket.on('write-bit', (data) => {
+        if (!isPlcConnected) return console.error('CLP não conectado. Escrita abortada.');
+        
+        const { value } = data; // value deve ser true ou false
+        const buffer = Buffer.from([value ? 1 : 0]);
+        const start = VAR_CONFIG.bitTeste.byte * 8 + VAR_CONFIG.bitTeste.bit;
+        
+        s7client.WriteArea(s7client.S7AreaDB, DB_NUMBER, start, 1, s7client.S7WLBit, buffer, (err) => {
+            if (err) return console.error(`[ERRO] Escrita do Bit falhou. Código: ${err}`);
+            console.log(`[ESCRITA] Bit de teste alterado para: ${value}`);
+        });
+    });
+
+    // Escrever a Variável Inteira (INT)
+    socket.on('write-int', (data) => {
+        if (!isPlcConnected) return console.error('CLP não conectado. Escrita abortada.');
+
+        const value = parseInt(data.value, 10);
+        if (isNaN(value)) return;
+
+        const buffer = Buffer.alloc(2);
+        buffer.writeInt16BE(value, 0); // Big-Endian para S7
+
+        s7client.DBWrite(DB_NUMBER, VAR_CONFIG.intTeste.byte, 2, buffer, (err) => {
+            if (err) return console.error(`[ERRO] Escrita do Int falhou. Código: ${err}`);
+            console.log(`[ESCRITA] Inteiro de teste alterado para: ${value}`);
+        });
+    });
+    
+    // Escrever a Variável Real (REAL)
+    socket.on('write-real', (data) => {
+        if (!isPlcConnected) return console.error('CLP não conectado. Escrita abortada.');
+
+        const value = parseFloat(data.value);
+        if (isNaN(value)) return;
+        
+        const buffer = Buffer.alloc(4);
+        buffer.writeFloatBE(value, 0); // Big-Endian para S7
+
+        s7client.DBWrite(DB_NUMBER, VAR_CONFIG.realTeste.byte, 4, buffer, (err) => {
+            if (err) return console.error(`[ERRO] Escrita do Real falhou. Código: ${err}`);
+            console.log(`[ESCRITA] Real de teste alterado para: ${value}`);
+        });
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Cliente web desconectado:', socket.id);
+    });
+});
+
+// --- LEITURA PERIÓDICA DO CLP E ENVIO PARA TODOS OS CLIENTES ---
+setInterval(() => {
+    if (!isPlcConnected) {
+        // Se desconectado, envia um status para o frontend
+        io.emit('plc-data', { status: 'Desconectado', values: {} });
+        return;
+    }
+    
+    // Lê o bloco de dados (DB1)
+    s7client.DBRead(DB_NUMBER, 0, DB_SIZE, (err, buffer) => {
+        if (err) {
+            console.error(`[ERRO] Leitura do DB falhou. Código: ${err}. Tentando reconectar...`);
+            isPlcConnected = false;
+            s7client.Disconnect();
+            connectPLC(); // Tenta restabelecer a conexão
+            return;
+        }
+
+        // Processa o buffer lido para extrair os valores
+        const plcData = {
+            bitTeste: (buffer[VAR_CONFIG.bitTeste.byte] & (1 << VAR_CONFIG.bitTeste.bit)) !== 0,
+            intTeste: buffer.readInt16BE(VAR_CONFIG.intTeste.byte),
+            realTeste: buffer.readFloatBE(VAR_CONFIG.realTeste.byte)
+        };
+        
+        // Envia os dados para todos os clientes conectados
+        io.emit('plc-data', { status: 'Conectado', values: plcData });
+    });
+}, 1000); // Lê a cada 1 segundo
+
+
+// Inicia o servidor web
+server.listen(PORT, () => {
+    console.log(`Servidor SCADA rodando em http://localhost:${PORT}`);
+});
