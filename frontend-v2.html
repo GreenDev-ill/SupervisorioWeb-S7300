@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste SCADA S7-300</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Interface de Teste SCADA - S7-300</h1>
+        <div class="status">
+            Status da Conexão com CLP: <span id="plc-status">--</span>
+        </div>
+
+        <div class="card">
+            <h2>Bit de Teste (BOOL)</h2>
+            <p>Valor Atual: <span id="bit-value" class="value-display">--</span></p>
+            <button id="set-bit-btn">SETAR Bit</button>
+            <button id="reset-bit-btn">RESETAR Bit</button>
+        </div>
+
+        <div class="card">
+            <h2>Variável Inteira (INT)</h2>
+            <p>Valor Atual: <span id="int-value" class="value-display">--</span></p>
+            <div class="input-group">
+                <input type="number" id="int-input" placeholder="Digite um valor inteiro">
+                <button id="write-int-btn">Enviar</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Variável Real (REAL)</h2>
+            <p>Valor Atual: <span id="real-value" class="value-display">--</span></p>
+            <div class="input-group">
+                <input type="number" step="0.1" id="real-input" placeholder="Digite um valor real">
+                <button id="write-real-btn">Enviar</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
