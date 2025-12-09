@@ -1,48 +1,75 @@
-# SupervisorioWeb-S7300
-Supervosrio SCADA de um CLP S7300 com conexão via CP343-1 Lean Ethernet
+Isso é música para os meus ouvidos. Começar pela documentação é o que separa o "programador que escreve código" do "Engenheiro de Software".
 
-Passo 1: Configuração do Projeto (Backend)
-Crie uma pasta para o seu projeto e navegue até ela no terminal:
+Para essa vaga, que pede Inglês Avançado, a melhor estratégia é escrever essa documentação em Inglês no seu GitHub. Isso mata dois coelhos: mostra organização técnica e prova a fluência no idioma técnico.
 
-Bash
+Abaixo, estruturei o documento como um README.md profissional ou uma Especificação Técnica.
 
-mkdir scada-test-s7
-cd scada-test-s7
-Inicie um projeto Node.js:
+Project: Line 9 Alarm Historian & Monitoring System
+1. Executive Summary (Resumo Executivo)
+Business Problem: The "Line 9 Separator" machine currently operates without a supervisory system (SCADA/HMI). Maintenance teams rely on reactive responses, as there is no historical data on alarms or downtime causes. Solution: A custom .NET solution to collect real-time data from the Siemens S7-300 PLC, store alarm history in a SQL Server database, and visualize KPIs via a Web Dashboard. Goal: Reduce Mean Time to Repair (MTTR) and improve visibility of line efficiency.
 
-Bash
+2. Technical Architecture (Arquitetura Técnica)
+The solution follows a standard 3-Tier Architecture suitable for Industrial IoT (IIoT) applications:
 
-npm init -y
-Instale as dependências necessárias:
+Level 0 (Field): Siemens S7-300 PLC (CP 343-1 Ethernet Module).
 
-Bash
+Level 1 (Data Collection - Backend): C# Worker Service (Windows Service) using S7.Net library.
 
-npm install express socket.io node-snap7
-Crie uma subpasta chamada public para guardar os arquivos do frontend:
+Level 2 (Persistence): Microsoft SQL Server.
 
-Bash
+Level 3 (Presentation): ASP.NET Core Web API + React.js Frontend.
 
-mkdir public
+Architecture Diagram (Conceptual)
+Snippet de código
 
-Passo 2: Configuração das Variáveis no CLP (Exemplo)
-Para este exemplo, vamos assumir que você configurou um Data Block (DB), por exemplo, o DB1, com as seguintes variáveis:
+[PLC S7-300] <--(TCP/IP iso-on-tcp)--> [C# Service Collector] --(ADO.NET)--> [SQL Server DB]
+                                                ^
+                                                |
+                                          [Web API] <--(JSON)--> [React Dashboard]
+3. Functional Requirements (Requisitos Funcionais)
+3.1 Data Acquisition (Coleta)
+The system must establish a TCP/IP connection with the PLC S7-300.
 
-Endereço	Símbolo	Tipo de Dado	Descrição
-DB1.DBX0.0	g_bTeste	BOOL	Bit de teste que será setado/resetado.
-DB1.DBW2	g_iTeste	INT	Variável inteira de teste.
-DB1.DBD4	g_rTeste	REAL	Variável real de teste.
+The system must poll a specific Data Block (e.g., DB10) every 500ms.
 
-Passo 5: Rodando a Aplicação
-Certifique-se de que seu CLP S7-300 está ligado e conectado à mesma rede que o seu computador.
+The system must detect state changes (Rising Edge/Falling Edge) for up to 32 discrete alarm bits.
 
-No terminal, na raiz do seu projeto (scada-test-s7), execute o servidor:
+3.2 Data Storage (Armazenamento)
+Alarm Start: When a bit goes from 0 to 1, insert a new record with StartTime.
 
-Bash
+Alarm End: When a bit goes from 1 to 0, update the corresponding record with EndTime and calculate Duration.
 
-node server.js
-Você deverá ver a mensagem: Servidor SCADA rodando em http://localhost:3000 e, em seguida, uma mensagem de sucesso ou erro da conexão com o CLP.
+Maintain a configuration table mapping PLC Addresses (e.g., DB10.DBX0.1) to Human-Readable Descriptions (e.g., "Motor Overload").
 
-Abra seu navegador de internet (Chrome, Firefox, etc.) e acesse o endereço:
-http://localhost:3000
+3.3 Visualization (Visualização)
+Live View: Display a list of currently active alarms in real-time.
 
-Você verá a interface web. Se tudo estiver correto, o status da conexão aparecerá como "Conectado" e os valores lidos do CLP serão exibidos e atualizados a cada segundo. Você poderá usar os botões e campos para alterar os valores diretamente no Data Block do seu S7-300.
+History View: A table showing past alarms with filters by date.
+
+Dashboard: A Pareto Chart showing the "Top 5 Frequent Alarms" of the day.
+
+4. Technical Scope & Stack (Escopo Técnico)
+4.1 Hardware & Network
+PLC CPU: Siemens CPU 315-2 PN/DP (or similar S7-300).
+
+Communication Interface: Ethernet (Profinet/Industrial Ethernet).
+
+Protocol: Siemens S7 Protocol (RFC 1006).
+
+4.2 Software Stack (The "Job Requirements" Match)
+Language: C# (.NET 6.0 or 8.0).
+
+Library: S7.Net (Open source driver for Siemens PLCs).
+
+Database: SQL Server Express (using raw ADO.NET or Dapper for performance, avoiding heavy Entity Framework overhead for high-frequency logging).
+
+API: ASP.NET Core Web API.
+
+Frontend: React.js (Single Page Application).
+
+5. Data Model Design (Modelagem de Dados)
+Here is the initial Schema for the SQL Server Database.
+
+Table 1: AlarmConfig (Metadata) | Column | Type | Description | | :--- | :--- | :--- | | AlarmID | INT (PK) | Unique Identifier (1 to 32) | | PLC_Address | VARCHAR(20) | The byte.bit address (e.g., "0.0") | | Description | VARCHAR(100)| "Vacuum Pump Failure" | | IsEnabled | BIT | To ignore unused bits |
+
+Table 2: AlarmEvents (Transactional) | Column | Type | Description | | :--- | :--- | :--- | | EventID | BIGINT (PK) | Auto-increment | | AlarmID | INT (FK) | Reference to AlarmConfig | | StartTime | DATETIME | When the alarm triggered | | EndTime | DATETIME | When the alarm cleared (NULL if active) | | DurationSec| INT | Calculated duration in seconds |
