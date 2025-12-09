@@ -20,6 +20,7 @@ Snippet de código
                                                 ^
                                                 |
                                           [Web API] <--(JSON)--> [React Dashboard]
+
 3. Functional Requirements 
 3.1 Data Acquisition 
 The system must establish a TCP/IP connection with the PLC S7-300.
